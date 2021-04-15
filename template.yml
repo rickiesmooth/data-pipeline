@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  aws-serverless-tracking-pixel
+
+  This solution deploys a lambda function and an API Gateway HTTP API to process tracking information from the HTTP request, 
+  returning a 1x1 transparent pixel so it can be invoked from an IMG HTML tag
+
+Resources:
+  AnalyticsEndpoint:
+    Type: AWS::Serverless::Function
+    DependsOn: DeliveryStream
+    Properties:
+      CodeUri: analytics-lambda
+      Handler: dist/index.handler
+      Runtime: nodejs12.x
+      Environment:
+        Variables:
+          KINESIS_FIREHOSE_STREAM_NAME: !Ref DeliveryStream
+      Events:
+        AnalyticsAPI:
+          Type: HttpApi
+      Policies:
+        - Statement:
+            - Sid: FirehosePutRecord
+              Effect: Allow
+              Action:
+                - firehose:PutRecord
+              Resource: !GetAtt DeliveryStream.Arn
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput: {}
+
+  GlueTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: sample_data_firehose
+        Owner: owner
+        Retention: 0
+        StorageDescriptor:
+          Location: !Join
+            - ""
+            - - "s3://"
+              - !Ref S3bucket
+              - "/"
+          Columns:
+            - Name: date
+              Type: string
+            - Name: ip
+              Type: string
+            - Name: useragent
+              Type: string
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          Compressed: false
+          NumberOfBuckets: -1
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+            Parameters:
+              serialization.format: "1"
+          BucketColumns: []
+          SortColumns: []
+          StoredAsSubDirectories: false
+        PartitionKeys:
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          - Name: hour
+            Type: string
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          compressionType: none
+          classification: parquet
+
+  DeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamType: DirectPut
+      ExtendedS3DestinationConfiguration:
+        RoleARN: !GetAtt DeliveryRole.Arn
+        BucketARN: !GetAtt S3bucket.Arn
+        Prefix: "year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/"
+        ErrorOutputPrefix: "fherroroutputbase/!{firehose:random-string}/!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd}/"
+        BufferingHints:
+          SizeInMBs: 64
+          IntervalInSeconds: 300
+        CompressionFormat: UNCOMPRESSED
+        EncryptionConfiguration:
+          NoEncryptionConfig: NoEncryption
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Join
+            - ""
+            - - "KDF-"
+              - !Ref GlueTable
+          LogStreamName: S3Delivery
+        S3BackupMode: Disabled
+        DataFormatConversionConfiguration:
+          SchemaConfiguration:
+            CatalogId: !Ref AWS::AccountId
+            RoleARN: !GetAtt DeliveryRole.Arn
+            DatabaseName: !Ref GlueDatabase
+            TableName: !Ref GlueTable
+            Region: !Ref AWS::Region
+            VersionId: LATEST
+          InputFormatConfiguration:
+            Deserializer:
+              OpenXJsonSerDe: {}
+          OutputFormatConfiguration:
+            Serializer:
+              ParquetSerDe: {}
+          Enabled: True
+
+  S3bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+
+  DeliveryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ""
+            Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref "AWS::AccountId"
+      Path: "/"
+      Policies:
+        - PolicyName: firehose_delivery_policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:AbortMultipartUpload"
+                  - "s3:GetBucketLocation"
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                  - "s3:ListBucketMultipartUploads"
+                  - "s3:PutObject"
+                Resource:
+                  - !Join
+                    - ""
+                    - - "arn:aws:s3:::"
+                      - !Ref S3bucket
+                  - !Join
+                    - ""
+                    - - "arn:aws:s3:::"
+                      - !Ref S3bucket
+                      - "/*"
+              - Effect: Allow
+                Action: "glue:GetTableVersions"
+                Resource: "*"
+              - Effect: Allow
+                Action: "logs:PutLogEvents"
+                Resource:
+                  - !Join
+                    - ""
+                    - - "arn:aws:logs:"
+                      - !Ref "AWS::Region"
+                      - ":"
+                      - !Ref "AWS::AccountId"
+                      - "log-group:/aws/kinesisfirehose/KDF-"
+                      - !Ref GlueTable
+                      - ":log-stream:*"
+        - PolicyName: AthenaAccess
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: athena:*
+                Resource: "*"
+Outputs:
+  deliverysreamARN:
+    Description: The ARN of the firehose delivery stream
+    Value: !GetAtt DeliveryStream.Arn
+  AnalyticsAPIURL:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/analytics"
