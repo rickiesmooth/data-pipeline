@@ -5,22 +5,26 @@ import {
 } from '@aws-sdk/client-firehose'
 
 // a client can be shared by different commands.
-const client = new FirehoseClient({ region: "eu-central-1" });
+const client = new FirehoseClient({ region: "us-east-1" });
 
 export const handler = async function (event: APIGatewayProxyEvent) {
   try {
     const payload = {
       date: event["requestContext"]["requestTime"],
-      ip: event["headers"]["x-forwarded-for"],
-      userAgent: event["headers"]["user-agent"],
+      ip: event["requestContext"]["identity"]['sourceIp'],
+      userAgent: event["headers"]["User-Agent"],
+      country: event["headers"]['CloudFront-Viewer-Country'],
     };
 
-    const params = {
-      DeliveryStreamName: process.env.KINESIS_FIREHOSE_STREAM_NAME,
-      Record: { Data: Buffer.from(JSON.stringify(payload)) },
-    }
+    console.log("payload:", payload)
+    // this relates to AWS::KinesisFirehose::DeliveryStream DeliveryStreamName
+    const DeliveryStreamName = "AnalyticsDeliveryStream"
+    const Record = { Data: Buffer.from(JSON.stringify(payload)) }
     
-   await client.send(new PutRecordCommand(params))
+    client.send(new PutRecordCommand({ DeliveryStreamName, Record }))
+  
+    return { statusCode: 200 }
+
   } catch (error) {
     // Catch all exceptions, we don't want the analytical part affects the business process so they are only printed in the logs
     console.log("Unexpected error:", error)

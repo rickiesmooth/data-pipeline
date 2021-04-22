@@ -1,14 +1,16 @@
 {
+  "private": true,
   "name": "analytics",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc",
-    "deploy": "sam build && sam deploy --stack-name analytics --s3-bucket=you-transfer --capabilities CAPABILITY_IAM"
+    "build": "yarn workspace analytics-lambda tsc && sam build",
+    "deploy": "yarn run build && sam deploy --stack-name analytics --s3-bucket=bucket-for-edge-lambdas --capabilities CAPABILITY_IAM --region us-east-1"
   },
   "keywords": [],
   "author": "",
+  "workspaces": ["analytics-lambda"],
   "license": "ISC"
 }

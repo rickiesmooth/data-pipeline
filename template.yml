@@ -7,6 +7,16 @@ Description: >
   This solution deploys a lambda function and an API Gateway HTTP API to process tracking information from the HTTP request, 
   returning a 1x1 transparent pixel so it can be invoked from an IMG HTML tag
 
+Parameters:
+  DomainName:
+    Type: String
+    Description: 'Domain name traffic should be routed to'
+  CertificateArn:
+    Type: String
+  HostedZoneID:
+    Type: String
+    Description: 'Hosted zone ID domain is part of'
+
 Resources:
   AnalyticsEndpoint:
     Type: AWS::Serverless::Function
@@ -15,19 +25,81 @@ Resources:
       CodeUri: analytics-lambda
       Handler: dist/index.handler
       Runtime: nodejs12.x
-      Environment:
-        Variables:
-          KINESIS_FIREHOSE_STREAM_NAME: !Ref DeliveryStream
+      AutoPublishAlias: live
       Events:
         AnalyticsAPI:
-          Type: HttpApi
-      Policies:
-        - Statement:
-            - Sid: FirehosePutRecord
-              Effect: Allow
-              Action:
-                - firehose:PutRecord
-              Resource: !GetAtt DeliveryStream.Arn
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /track
+            Method: get
+      Role: !GetAtt LambdaEdgeFunctionRole.Arn
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: 'true'
+        Comment: 'Anlytics for Lambda@Edge'
+        Origins:
+          -
+            Id: LambdaOrigin
+            DomainName: aws.amazon.com
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: match-viewer
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: 'sni-only'      
+        DefaultCacheBehavior:
+          TargetOriginId: LambdaOrigin
+          MinTTL: 0
+          MaxTTL: 0
+          DefaultTTL: 0
+          LambdaFunctionAssociations:
+            - 
+              EventType: origin-request
+              LambdaFunctionARN: !Ref AnalyticsEndpoint.Version
+          ForwardedValues:
+            QueryString: 'false'
+            Headers:
+              - Origin
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: allow-all
+  
+  DistributionAlias:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref HostedZoneID
+      RecordSets:
+        - Name: !Ref DomainName
+          Type: A
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2
+            DNSName: !GetAtt Distribution.DomainName
+
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Cors: "'*'"
+      StageName: Prod
+
+  ApiGatewayDomainName:
+    Type: AWS::ApiGateway::DomainName
+    Properties:
+      CertificateArn: !Ref CertificateArn
+      DomainName: !Ref DomainName
+      EndpointConfiguration:
+        Types:
+          - EDGE
+
+  MyMapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    Properties:
+      DomainName: !Ref DomainName
+      RestApiId: !Ref ApiGateway
+      Stage: Prod
 
   GlueDatabase:
     Type: AWS::Glue::Database
@@ -57,6 +129,8 @@ Resources:
               Type: string
             - Name: useragent
               Type: string
+            - Name: country
+              Type: string  
           InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
           OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
           Compressed: false
@@ -85,6 +159,7 @@ Resources:
   DeliveryStream:
     Type: AWS::KinesisFirehose::DeliveryStream
     Properties:
+      DeliveryStreamName: AnalyticsDeliveryStream
       DeliveryStreamType: DirectPut
       ExtendedS3DestinationConfiguration:
         RoleARN: !GetAtt DeliveryRole.Arn
@@ -186,10 +261,43 @@ Resources:
               - Effect: Allow
                 Action: athena:*
                 Resource: "*"
+
+  LambdaEdgeFunctionRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+          Path: "/"
+          ManagedPolicyArns:
+              - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+          AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Sid: "AllowLambdaServiceToAssumeRole"
+                Effect: "Allow"
+                Action: 
+                  - "sts:AssumeRole"
+                Principal:
+                  Service: 
+                    - "lambda.amazonaws.com"
+                    - "edgelambda.amazonaws.com"  
+
+  LambdaEdgeFunctionPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action:
+          - 'firehose:PutRecord'
+          Resource: !GetAtt DeliveryStream.Arn
+      PolicyName: lambda
+      Roles:
+      - !Ref LambdaEdgeFunctionRole
+
 Outputs:
   deliverysreamARN:
     Description: The ARN of the firehose delivery stream
     Value: !GetAtt DeliveryStream.Arn
   AnalyticsAPIURL:
     Description: API Gateway endpoint URL
-    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/analytics"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/analytics"
