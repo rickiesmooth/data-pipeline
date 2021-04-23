@@ -164,8 +164,14 @@ Resources:
       ExtendedS3DestinationConfiguration:
         RoleARN: !GetAtt DeliveryRole.Arn
         BucketARN: !GetAtt S3bucket.Arn
-        Prefix: "year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/"
-        ErrorOutputPrefix: "fherroroutputbase/!{firehose:random-string}/!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd}/"
+        Prefix: !Join 
+          - ''
+          - - !Ref GlueTable
+            -  '/year=!{timestamp:YYYY}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/'
+        ErrorOutputPrefix: !Join 
+          - ''
+          - - !Ref GlueTable
+            -  'error/!{firehose:error-output-type}/year=!{timestamp:YYYY}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/'
         BufferingHints:
           SizeInMBs: 64
           IntervalInSeconds: 300
