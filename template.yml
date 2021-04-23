@@ -94,7 +94,7 @@ Resources:
         Types:
           - EDGE
 
-  MyMapping:
+  Mapping:
     Type: AWS::ApiGateway::BasePathMapping
     Properties:
       DomainName: !Ref DomainName
@@ -155,6 +155,22 @@ Resources:
         Parameters:
           compressionType: none
           classification: parquet
+
+  GlueCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: "analytics-crawler"
+      Role: !GetAtt DeliveryRole.Arn
+      DatabaseName: !Ref GlueDatabase
+      Targets:
+        S3Targets:
+          - Path: !Ref S3bucket
+      SchemaChangePolicy:
+        UpdateBehavior: "UPDATE_IN_DATABASE"
+        DeleteBehavior: "LOG"
+      # Schedule:
+      #   ScheduleExpression: "cron(0/10 * ? * MON-FRI *)"
+
 
   DeliveryStream:
     Type: AWS::KinesisFirehose::DeliveryStream
