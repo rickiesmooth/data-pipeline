@@ -115,7 +115,7 @@ Resources:
       CatalogId: !Ref AWS::AccountId
       DatabaseName: !Ref GlueDatabase
       TableInput:
-        Name: sample_data_firehose
+        Name: data_firehose
         Owner: owner
         Retention: 0
         StorageDescriptor:
@@ -166,7 +166,11 @@ Resources:
       DatabaseName: !Ref GlueDatabase
       Targets:
         S3Targets:
-          - Path: !Ref S3bucket
+          - Path: !Join 
+            - ''
+            - - !Ref S3bucket
+              - "/"
+              - !Ref GlueTable
       SchemaChangePolicy:
         UpdateBehavior: "UPDATE_IN_DATABASE"
         DeleteBehavior: "LOG"

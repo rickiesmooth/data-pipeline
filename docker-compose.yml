@@ -2,5 +2,6 @@ version: "3.9"
 services:
   web:
     build: .
+    image: 331208789346.dkr.ecr.us-east-1.amazonaws.com/rick-hobby:09e0d6a341af7458947f08493842c983d20f88e1 # TODO Fix :latest
     ports:
       - "8088:8088"
