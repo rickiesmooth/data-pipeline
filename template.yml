@@ -94,12 +94,14 @@ Resources:
         Types:
           - EDGE
 
-  Mapping:
+  ApiGatewayMapping:
     Type: AWS::ApiGateway::BasePathMapping
+    DependsOn:
+      - ApiGateway
     Properties:
       DomainName: !Ref DomainName
       RestApiId: !Ref ApiGateway
-      Stage: Prod
+      Stage: !Ref ApiGateway.Stage
 
   GlueDatabase:
     Type: AWS::Glue::Database
@@ -160,7 +162,7 @@ Resources:
     Type: AWS::Glue::Crawler
     Properties:
       Name: "analytics-crawler"
-      Role: !GetAtt DeliveryRole.Arn
+      Role: !GetAtt GlueRole.Arn
       DatabaseName: !Ref GlueDatabase
       Targets:
         S3Targets:
@@ -233,7 +235,8 @@ Resources:
           - Sid: ""
             Effect: Allow
             Principal:
-              Service: firehose.amazonaws.com
+              Service: 
+              - firehose.amazonaws.com
             Action: "sts:AssumeRole"
             Condition:
               StringEquals:
@@ -284,8 +287,26 @@ Resources:
                 Action: athena:*
                 Resource: "*"
 
+  GlueRole: 
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/"
+      ManagedPolicyArns:
+          - "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Sid: "AllowGlueServiceToAssumeRole"
+            Effect: "Allow"
+            Action: 
+              - "sts:AssumeRole"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+    
   LambdaEdgeFunctionRole:
-      Type: "AWS::IAM::Role"
+      Type: AWS::IAM::Role
       Properties:
           Path: "/"
           ManagedPolicyArns:
@@ -304,7 +325,7 @@ Resources:
                     - "edgelambda.amazonaws.com"  
 
   LambdaEdgeFunctionPolicy:
-    Type: 'AWS::IAM::Policy'
+    Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
         Statement:
@@ -315,6 +336,29 @@ Resources:
       PolicyName: lambda
       Roles:
       - !Ref LambdaEdgeFunctionRole
+
+  GluePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action:
+          - 's3:GetObject'
+          - 's3:PutObject'
+          Resource:
+              - !Join
+                - ""
+                - - "arn:aws:s3:::"
+                  - !Ref S3bucket
+              - !Join
+                - ""
+                - - "arn:aws:s3:::"
+                  - !Ref S3bucket
+                  - "/*"
+      PolicyName: glue
+      Roles:
+      - !Ref GlueRole
 
 Outputs:
   deliverysreamARN:

@@ -40,7 +40,7 @@ jobs:
       - name: sam deploy
         run: |
           sam deploy \
-            --stack-name analytics \
+            --stack-name analytics-infra \
             --s3-bucket=bucket-for-edge-lambdas \
             --no-fail-on-empty-changeset \
             --capabilities CAPABILITY_IAM \
