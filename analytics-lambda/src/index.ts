@@ -1,8 +1,5 @@
-import { APIGatewayProxyEvent } from 'aws-lambda'
-import {
-  FirehoseClient,
-  PutRecordCommand,
-} from '@aws-sdk/client-firehose'
+import { APIGatewayProxyEvent } from "aws-lambda";
+import { FirehoseClient, PutRecordCommand } from "@aws-sdk/client-firehose";
 
 // a client can be shared by different commands.
 const client = new FirehoseClient({ region: "us-east-1" });
@@ -10,25 +7,23 @@ const client = new FirehoseClient({ region: "us-east-1" });
 export const handler = async function (event: APIGatewayProxyEvent) {
   try {
     const payload = {
-      date: event["requestContext"]["requestTime"],
-      ip: event["requestContext"]["identity"]['sourceIp'],
+      date: event["requestContext"]["requestTime"], //  CLF-formatted request > //httpd.apache.org/docs/1.3/logs.html#common
+      ip: event["requestContext"]["identity"]["sourceIp"],
       userAgent: event["headers"]["User-Agent"],
-      country: event["headers"]['CloudFront-Viewer-Country'],
+      country: event["headers"]["CloudFront-Viewer-Country"],
     };
 
-    console.log("payload:", payload)
+    console.log("payload:", payload);
     // this relates to AWS::KinesisFirehose::DeliveryStream DeliveryStreamName
-    const DeliveryStreamName = "AnalyticsDeliveryStream"
-    const Record = { Data: Buffer.from(JSON.stringify(payload)) }
-    
-    client.send(new PutRecordCommand({ DeliveryStreamName, Record }))
-  
-    return { statusCode: 200 }
+    const DeliveryStreamName = "AnalyticsDeliveryStream";
+    const Record = { Data: Buffer.from(JSON.stringify(payload)) };
+
+    await client.send(new PutRecordCommand({ DeliveryStreamName, Record }));
+
+    return { statusCode: 200, headers: { "Access-Control-Allow-Origin": "*" } };
 
   } catch (error) {
     // Catch all exceptions, we don't want the analytical part affects the business process so they are only printed in the logs
-    console.log("Unexpected error:", error)
+    console.log("Unexpected error:", error);
   }
-}
-
-
+};
