@@ -9,6 +9,7 @@ export const handler = async function (event: APIGatewayProxyEvent) {
     const payload = {
       requestTimeEpoch: event["requestContext"]["requestTimeEpoch"],
       requestTime: event["requestContext"]["requestTime"],
+      date: new Date().toISOString().slice(0, 19).replace('T', ' '),
       ip: event["requestContext"]["identity"]["sourceIp"],
       userAgent: event["headers"]["User-Agent"],
       country: event["headers"]["CloudFront-Viewer-Country"],
