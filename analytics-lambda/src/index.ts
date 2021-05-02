@@ -7,7 +7,8 @@ const client = new FirehoseClient({ region: "us-east-1" });
 export const handler = async function (event: APIGatewayProxyEvent) {
   try {
     const payload = {
-      date: event["requestContext"]["requestTimeEpoch"],
+      requestTimeEpoch: event["requestContext"]["requestTimeEpoch"],
+      requestTime: event["requestContext"]["requestTime"],
       ip: event["requestContext"]["identity"]["sourceIp"],
       userAgent: event["headers"]["User-Agent"],
       country: event["headers"]["CloudFront-Viewer-Country"],
