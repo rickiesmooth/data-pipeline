@@ -126,7 +126,7 @@ Resources:
               - "/"
           Columns:
             - Name: date
-              Type: string
+              Type: datetime
             - Name: ip
               Type: string
             - Name: useragent
